@@ -15,6 +15,7 @@
 #include <muduo/base/StringPiece.h>
 
 #include <netinet/in.h>
+#include <sys/un.h>
 
 namespace muduo
 {
@@ -40,6 +41,9 @@ class InetAddress : public muduo::copyable
   /// @c ip should be "1.2.3.4"
   InetAddress(StringArg ip, uint16_t port, bool ipv6 = false);
 
+  /// Constructs an endpoint with given unix socket path
+  explicit InetAddress(StringArg path);
+
   /// Constructs an endpoint with given struct @c sockaddr_in
   /// Mostly used when accepting new connections
   explicit InetAddress(const struct sockaddr_in& addr)
@@ -50,15 +54,26 @@ class InetAddress : public muduo::copyable
     : addr6_(addr)
   { }
 
+  explicit InetAddress(const struct sockaddr_un &addr)
+      : un_addr_(addr)
+  { }
+
+  explicit InetAddress(const struct sockaddr_storage &addr)
+      : gen_addr_(addr)
+  { }
+
   sa_family_t family() const { return addr_.sin_family; }
   string toIp() const;
   string toIpPort() const;
   uint16_t toPort() const;
+  string toString() const;
 
   // default copy/assignment are Okay
 
   const struct sockaddr* getSockAddr() const { return sockets::sockaddr_cast(&addr6_); }
   void setSockAddrInet6(const struct sockaddr_in6& addr6) { addr6_ = addr6; }
+
+  void setSockAddrGen(const struct sockaddr_storage& addr) { gen_addr_ = addr; }
 
   uint32_t ipNetEndian() const;
   uint16_t portNetEndian() const { return addr_.sin_port; }
@@ -74,6 +89,8 @@ class InetAddress : public muduo::copyable
   {
     struct sockaddr_in addr_;
     struct sockaddr_in6 addr6_;
+    struct sockaddr_un un_addr_;
+    struct sockaddr_storage gen_addr_;
   };
 };
 

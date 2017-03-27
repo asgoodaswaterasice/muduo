@@ -48,7 +48,7 @@ static const in_addr_t kInaddrLoopback = INADDR_LOOPBACK;
 using namespace muduo;
 using namespace muduo::net;
 
-BOOST_STATIC_ASSERT(sizeof(InetAddress) == sizeof(struct sockaddr_in6));
+BOOST_STATIC_ASSERT(sizeof(InetAddress) == sizeof(struct sockaddr_storage));
 BOOST_STATIC_ASSERT(offsetof(sockaddr_in, sin_family) == 0);
 BOOST_STATIC_ASSERT(offsetof(sockaddr_in6, sin6_family) == 0);
 BOOST_STATIC_ASSERT(offsetof(sockaddr_in, sin_port) == 2);
@@ -93,6 +93,11 @@ InetAddress::InetAddress(StringArg ip, uint16_t port, bool ipv6)
   }
 }
 
+InetAddress::InetAddress(StringArg path) {
+    bzero(&un_addr_, sizeof un_addr_);
+    sockets::fromUnPath(path.c_str(),&un_addr_);
+}
+
 string InetAddress::toIpPort() const
 {
   char buf[64] = "";
@@ -105,6 +110,20 @@ string InetAddress::toIp() const
   char buf[64] = "";
   sockets::toIp(buf, sizeof buf, getSockAddr());
   return buf;
+}
+
+string InetAddress::toString() const
+{
+    switch(gen_addr_.ss_family) {
+    case AF_LOCAL:
+        return un_addr_.sun_path;
+    case AF_INET:
+    case AF_INET6:
+        return toIpPort();
+    default:
+      LOG_SYSERR << "InetAddress::toString";
+      return "";
+    }
 }
 
 uint32_t InetAddress::ipNetEndian() const

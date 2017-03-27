@@ -214,7 +214,7 @@ void Connector::retry(int sockfd)
   setState(kDisconnected);
   if (connect_)
   {
-    LOG_INFO << "Connector::retry - Retry connecting to " << serverAddr_.toIpPort()
+    LOG_INFO << "Connector::retry - Retry connecting to " << serverAddr_.toString()
              << " in " << retryDelayMs_ << " milliseconds. ";
     loop_->runAfter(retryDelayMs_/1000.0,
                     boost::bind(&Connector::startInLoop, shared_from_this()));

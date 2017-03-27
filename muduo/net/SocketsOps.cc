@@ -59,6 +59,16 @@ struct sockaddr* sockets::sockaddr_cast(struct sockaddr_in6* addr)
   return static_cast<struct sockaddr*>(implicit_cast<void*>(addr));
 }
 
+const struct sockaddr* sockets::sockaddr_cast(const struct sockaddr_un* addr)
+{
+  return static_cast<const struct sockaddr*>(implicit_cast<const void*>(addr));
+}
+
+struct sockaddr* sockets::sockaddr_cast(struct sockaddr_storage* addr)
+{
+  return static_cast<struct sockaddr*>(implicit_cast<void*>(addr));
+}
+
 const struct sockaddr* sockets::sockaddr_cast(const struct sockaddr_in* addr)
 {
   return static_cast<const struct sockaddr*>(implicit_cast<const void*>(addr));
@@ -72,6 +82,11 @@ const struct sockaddr_in* sockets::sockaddr_in_cast(const struct sockaddr* addr)
 const struct sockaddr_in6* sockets::sockaddr_in6_cast(const struct sockaddr* addr)
 {
   return static_cast<const struct sockaddr_in6*>(implicit_cast<const void*>(addr));
+}
+
+const struct sockaddr_un* sockets::sockaddr_un_cast(const struct sockaddr* addr)
+{
+  return static_cast<const struct sockaddr_un*>(implicit_cast<const void*>(addr));
 }
 
 int sockets::createNonblockingOrDie(sa_family_t family)
@@ -96,7 +111,7 @@ int sockets::createNonblockingOrDie(sa_family_t family)
 
 void sockets::bindOrDie(int sockfd, const struct sockaddr* addr)
 {
-  int ret = ::bind(sockfd, addr, static_cast<socklen_t>(sizeof(struct sockaddr_in6)));
+  int ret = ::bind(sockfd, addr, static_cast<socklen_t>(sizeof(struct sockaddr_storage)));
   if (ret < 0)
   {
     LOG_SYSFATAL << "sockets::bindOrDie";
@@ -112,7 +127,7 @@ void sockets::listenOrDie(int sockfd)
   }
 }
 
-int sockets::accept(int sockfd, struct sockaddr_in6* addr)
+int sockets::accept(int sockfd, struct sockaddr_storage* addr)
 {
   socklen_t addrlen = static_cast<socklen_t>(sizeof *addr);
 #if VALGRIND || defined (NO_ACCEPT4)
@@ -240,6 +255,12 @@ void sockets::fromIpPort(const char* ip, uint16_t port,
   {
     LOG_SYSERR << "sockets::fromIpPort";
   }
+}
+
+void sockets::fromUnPath(const char *path,struct sockaddr_un *addr)
+{
+    addr->sun_family = AF_LOCAL;
+    strncpy(addr->sun_path,path,sizeof addr->sun_path);
 }
 
 int sockets::getSocketError(int sockfd)

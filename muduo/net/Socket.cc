@@ -70,12 +70,12 @@ void Socket::listen()
 
 int Socket::accept(InetAddress* peeraddr)
 {
-  struct sockaddr_in6 addr;
+  struct sockaddr_storage addr;
   bzero(&addr, sizeof addr);
   int connfd = sockets::accept(sockfd_, &addr);
   if (connfd >= 0)
   {
-    peeraddr->setSockAddrInet6(addr);
+    peeraddr->setSockAddrGen(addr);
   }
   return connfd;
 }
