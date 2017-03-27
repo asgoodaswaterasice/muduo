@@ -29,3 +29,8 @@ target_link_libraries(simple_timeclient muduo_net)
 add_executable(simple_chargenclient chargenclient/chargenclient.cc)
 target_link_libraries(simple_chargenclient muduo_net)
 
+add_executable(unix_echoclient unix/echoclient.cc)
+target_link_libraries(unix_echoclient muduo_net)
+
+add_executable(unix_echoserver unix/echoserver.cc unix/main.cc)
+target_link_libraries(unix_echoserver muduo_net)

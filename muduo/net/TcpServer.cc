@@ -26,7 +26,7 @@ TcpServer::TcpServer(EventLoop* loop,
                      const string& nameArg,
                      Option option)
   : loop_(CHECK_NOTNULL(loop)),
-    ipPort_(listenAddr.toIpPort()),
+    listen_addr_(listenAddr),
     name_(nameArg),
     acceptor_(new Acceptor(loop, listenAddr, option == kReusePort)),
     threadPool_(new EventLoopThreadPool(loop, name_)),
@@ -77,13 +77,13 @@ void TcpServer::newConnection(int sockfd, const InetAddress& peerAddr)
   loop_->assertInLoopThread();
   EventLoop* ioLoop = threadPool_->getNextLoop();
   char buf[64];
-  snprintf(buf, sizeof buf, "-%s#%d", ipPort_.c_str(), nextConnId_);
+  snprintf(buf, sizeof buf, "-%s#%d", listen_addr_.toString().c_str(), nextConnId_);
   ++nextConnId_;
   string connName = name_ + buf;
 
   LOG_INFO << "TcpServer::newConnection [" << name_
            << "] - new connection [" << connName
-           << "] from " << peerAddr.toIpPort();
+           << "] from " << peerAddr.toString();
   InetAddress localAddr(sockets::getLocalAddr(sockfd));
   // FIXME poll with zero timeout to double confirm the new connection
   // FIXME use make_shared if necessary

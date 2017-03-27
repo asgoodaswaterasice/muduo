@@ -50,7 +50,7 @@ class TcpServer : boost::noncopyable
             Option option = kNoReusePort);
   ~TcpServer();  // force out-line dtor, for scoped_ptr members.
 
-  const string& ipPort() const { return ipPort_; }
+  string ipPort() const { return listen_addr_.toString(); }
   const string& name() const { return name_; }
   EventLoop* getLoop() const { return loop_; }
 
@@ -103,7 +103,7 @@ class TcpServer : boost::noncopyable
   typedef std::map<string, TcpConnectionPtr> ConnectionMap;
 
   EventLoop* loop_;  // the acceptor loop
-  const string ipPort_;
+  const InetAddress listen_addr_;
   const string name_;
   boost::scoped_ptr<Acceptor> acceptor_; // avoid revealing Acceptor
   boost::shared_ptr<EventLoopThreadPool> threadPool_;

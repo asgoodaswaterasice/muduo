@@ -70,7 +70,7 @@ class InetAddress : public muduo::copyable
 
   // default copy/assignment are Okay
 
-  const struct sockaddr* getSockAddr() const { return sockets::sockaddr_cast(&addr6_); }
+  const struct sockaddr_storage* getSockAddr() const { return &gen_addr_; }
   void setSockAddrInet6(const struct sockaddr_in6& addr6) { addr6_ = addr6; }
 
   void setSockAddrGen(const struct sockaddr_storage& addr) { gen_addr_ = addr; }

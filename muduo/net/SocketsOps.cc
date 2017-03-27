@@ -49,6 +49,21 @@ void setNonBlockAndCloseOnExec(int sockfd)
 
 }
 
+socklen_t sockets::getSockAddrLen(const struct sockaddr_storage *addr)
+{
+    switch(addr->ss_family) {
+    case AF_INET:
+        return sizeof(struct sockaddr_in);
+    case AF_INET6:
+        return sizeof(struct sockaddr_in6);
+    case AF_LOCAL:
+        return sizeof(struct sockaddr_un);
+    default:
+        LOG_SYSFATAL << "sockets::getSockAddrLen";
+        return 0;
+    }
+}
+
 const struct sockaddr* sockets::sockaddr_cast(const struct sockaddr_in6* addr)
 {
   return static_cast<const struct sockaddr*>(implicit_cast<const void*>(addr));
@@ -67,6 +82,11 @@ const struct sockaddr* sockets::sockaddr_cast(const struct sockaddr_un* addr)
 struct sockaddr* sockets::sockaddr_cast(struct sockaddr_storage* addr)
 {
   return static_cast<struct sockaddr*>(implicit_cast<void*>(addr));
+}
+
+const struct sockaddr* sockets::sockaddr_cast(const struct sockaddr_storage* addr)
+{
+  return static_cast<const struct sockaddr*>(implicit_cast<const void*>(addr));
 }
 
 const struct sockaddr* sockets::sockaddr_cast(const struct sockaddr_in* addr)
@@ -92,7 +112,7 @@ const struct sockaddr_un* sockets::sockaddr_un_cast(const struct sockaddr* addr)
 int sockets::createNonblockingOrDie(sa_family_t family)
 {
 #if VALGRIND
-  int sockfd = ::socket(family, SOCK_STREAM, IPPROTO_TCP);
+  int sockfd = ::socket(family, SOCK_STREAM, 0);
   if (sockfd < 0)
   {
     LOG_SYSFATAL << "sockets::createNonblockingOrDie";
@@ -100,7 +120,7 @@ int sockets::createNonblockingOrDie(sa_family_t family)
 
   setNonBlockAndCloseOnExec(sockfd);
 #else
-  int sockfd = ::socket(family, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, IPPROTO_TCP);
+  int sockfd = ::socket(family, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
   if (sockfd < 0)
   {
     LOG_SYSFATAL << "sockets::createNonblockingOrDie";
@@ -109,11 +129,12 @@ int sockets::createNonblockingOrDie(sa_family_t family)
   return sockfd;
 }
 
-void sockets::bindOrDie(int sockfd, const struct sockaddr* addr)
+void sockets::bindOrDie(int sockfd, const struct sockaddr_storage* addr)
 {
-  int ret = ::bind(sockfd, addr, static_cast<socklen_t>(sizeof(struct sockaddr_storage)));
+  int ret = ::bind(sockfd, sockaddr_cast(addr), getSockAddrLen(addr));
   if (ret < 0)
   {
+    LOG_ERROR << strerror(errno);
     LOG_SYSFATAL << "sockets::bindOrDie";
   }
 }
@@ -129,7 +150,7 @@ void sockets::listenOrDie(int sockfd)
 
 int sockets::accept(int sockfd, struct sockaddr_storage* addr)
 {
-  socklen_t addrlen = static_cast<socklen_t>(sizeof *addr);
+  socklen_t addrlen = static_cast<socklen_t>(sizeof(*addr));
 #if VALGRIND || defined (NO_ACCEPT4)
   int connfd = ::accept(sockfd, sockaddr_cast(addr), &addrlen);
   setNonBlockAndCloseOnExec(connfd);
@@ -171,9 +192,9 @@ int sockets::accept(int sockfd, struct sockaddr_storage* addr)
   return connfd;
 }
 
-int sockets::connect(int sockfd, const struct sockaddr* addr)
+int sockets::connect(int sockfd, const struct sockaddr_storage* addr)
 {
-  return ::connect(sockfd, addr, static_cast<socklen_t>(sizeof(struct sockaddr_in6)));
+  return ::connect(sockfd, sockaddr_cast(addr), getSockAddrLen(addr));
 }
 
 ssize_t sockets::read(int sockfd, void *buf, size_t count)
@@ -233,6 +254,18 @@ void sockets::toIp(char* buf, size_t size,
     const struct sockaddr_in6* addr6 = sockaddr_in6_cast(addr);
     ::inet_ntop(AF_INET6, &addr6->sin6_addr, buf, static_cast<socklen_t>(size));
   }
+}
+
+void sockets::toIpPort(char* buf, size_t size,
+                       const struct sockaddr_storage* addr)
+{
+    toIpPort(buf,size,sockaddr_cast(addr));
+}
+
+void sockets::toIp(char* buf, size_t size,
+                   const struct sockaddr_storage* addr)
+{
+    toIp(buf,size,sockaddr_cast(addr));
 }
 
 void sockets::fromIpPort(const char* ip, uint16_t port,
