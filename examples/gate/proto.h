@@ -56,11 +56,14 @@ public:
     uint32_t getGateCmdMagic() const {
         return head.magic;
     }
-    std::string getGateCmdHeadString() const {
-        return std::string(reinterpret_cast<const char*>(&head), sizeof(protohead));
+    char* getGateCmdHeadPtr() {
+        return reinterpret_cast<char*>(&head);
     }
-    std::string getGateCmdData() const {
+    std::string& getGateCmdData() {
         return data;
+    }
+    uint64_t getGateCmdFlowno() const {
+        return head.flowno;
     }
     void setGateCmdMagic(uint32_t magic) {
          head.magic = magic;

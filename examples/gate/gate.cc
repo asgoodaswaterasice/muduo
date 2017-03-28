@@ -110,6 +110,7 @@ public:
       assert(!conn->getContext().empty()); //已经发消息了client的连接肯定已经建立了
       uint32_t id = boost::any_cast<uint32_t>(conn->getContext());
       gateCmd->setGateCmdMagic(id); //通过这个id找到消息回给哪个client
+      LOG_INFO << "======flowno:" << gateCmd->getGateCmdFlowno();
       if(chunkConns_.find(chunk_port) == chunkConns_.end())
       {
           char connName[256];
@@ -128,9 +129,10 @@ public:
                   // FIXME: setWriteCompleteCallback
           chunkConns_[entry.connId] = entry;
           LOG_INFO << "client to chunk not exist, try to connent, id: " << entry.connId;
-              chunkConns_[chunk_port].pending.append(gateCmd->getGateCmdHeadString());
+              chunkConns_[chunk_port].pending.append(gateCmd->getGateCmdHeadPtr(), sizeof(GateCmdProto::protohead));
               if (!gateCmd->getGateCmdData().empty()) //如果带数据，数据也要发送出去
                   chunkConns_[chunk_port].pending.append(gateCmd->getGateCmdData());
+        LOG_INFO << "pending======flowno:" << gateCmd->getGateCmdFlowno();
           entry.client->connect();
       }
       else
@@ -139,15 +141,17 @@ public:
           if (chunkConnPtr)  //map中有这个连接并且这个连接已经建立完成
           {
               assert(chunkConns_[chunk_port].pending.readableBytes() == 0);///////////////
-              chunkConnPtr->send(gateCmd->getGateCmdHeadString());
+              chunkConnPtr->send(gateCmd->getGateCmdHeadPtr(), sizeof(GateCmdProto::protohead));
               if (!gateCmd->getGateCmdData().empty()) //如果带数据，数据也要发送出去
                   chunkConnPtr->send(gateCmd->getGateCmdData());
+              LOG_INFO << "======flowno:" << gateCmd->getGateCmdFlowno();
           }
           else
           {
-              chunkConns_[chunk_port].pending.append(gateCmd->getGateCmdHeadString());
+              chunkConns_[chunk_port].pending.append(gateCmd->getGateCmdHeadPtr(), sizeof(GateCmdProto::protohead));
               if (!gateCmd->getGateCmdData().empty()) //如果带数据，数据也要发送出去
                   chunkConns_[chunk_port].pending.append(gateCmd->getGateCmdData());
+              LOG_INFO << "pending======flowno:" << gateCmd->getGateCmdFlowno();
           }
 
       }
@@ -158,6 +162,7 @@ public:
     assert(chunkConns_.find(connId) != chunkConns_.end());
     if (conn->connected())
     {
+      conn->setTcpNoDelay(true);
       chunkConns_[connId].connection = conn;
       Buffer& pendingData = chunkConns_[connId].pending;
       LOG_INFO << "connect to chunk success id: " << connId <<  
@@ -177,6 +182,7 @@ public:
   void onChunkMessage(const TcpConnectionPtr& conn, boost::shared_ptr<GateCmdProto>& gateCmd, Timestamp)
   {
       uint32_t id = gateCmd->getGateCmdMagic();
+      LOG_INFO << "======flowno:" << gateCmd->getGateCmdFlowno();
       LOG_INFO << "chunk response, and client id: " << id;  
       TcpConnectionPtr clientConn;
       {
@@ -189,7 +195,7 @@ public:
       }
       if (clientConn)
       {
-          clientConn->send(gateCmd->getGateCmdHeadString());
+          clientConn->send(gateCmd->getGateCmdHeadPtr(), sizeof(GateCmdProto::protohead));
           if (!gateCmd->getGateCmdData().empty()) //如果带数据，数据也要发送出去
               clientConn->send(gateCmd->getGateCmdData());
       }
