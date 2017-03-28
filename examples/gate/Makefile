@@ -12,15 +12,21 @@ INCLUDES = -I$(MUDUO_INCLUDE) -I$(SRC)
 
 LDFLAGS = -L$(MUDUO_LIBRARY) -lmuduo_net -lmuduo_base -lpthread -lrt
 
-SRCS = $(wildcard *.cc)
-OBJS = $(addsuffix .o, $(basename $(SRCS)))
+#SRCS = $(wildcard *.cc)
+#OBJS = $(addsuffix .o, $(basename $(SRCS)))
 CC = g++
 
-APP=gate
+APP=gate echo unix_client
 all: $(APP)
 
-$(APP) : $(OBJS)
+gate : gate.o
 	    $(CC)  $^ -o $@  $(LDFLAGS)
+
+echo : echo.o
+	    $(CC)  $^ -o $@  $(LDFLAGS)
+
+unix_client : unix_client.cc
+	    $(CC)  $^ -o $@ 
 
 %.o : %.cc
 	    $(CC) -c $< -o $@ $(CXXFLAGS) $(INCLUDES)

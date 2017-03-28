@@ -1,4 +1,5 @@
 #include <muduo/base/Logging.h>
+#include <muduo/base/AsyncLogging.h>
 #include <muduo/net/EventLoop.h>
 #include <muduo/net/InetAddress.h>
 #include <muduo/net/TcpClient.h>
@@ -126,7 +127,10 @@ public:
 
                   // FIXME: setWriteCompleteCallback
           chunkConns_[entry.connId] = entry;
-
+          LOG_INFO << "client to chunk not exist, try to connent, id: " << entry.connId;
+              chunkConns_[chunk_port].pending.append(gateCmd->getGateCmdHeadString());
+              if (!gateCmd->getGateCmdData().empty()) //如果带数据，数据也要发送出去
+                  chunkConns_[chunk_port].pending.append(gateCmd->getGateCmdData());
           entry.client->connect();
       }
       else
@@ -156,6 +160,8 @@ public:
     {
       chunkConns_[connId].connection = conn;
       Buffer& pendingData = chunkConns_[connId].pending;
+      LOG_INFO << "connect to chunk success id: " << connId <<  
+          "buffer has pending data size: " << pendingData.readableBytes();
       if (pendingData.readableBytes() > 0)
       {
         conn->send(&pendingData);
@@ -163,6 +169,7 @@ public:
     }
     else
     {
+        LOG_INFO << "disconnet from chunk, the erased id: " << connId;
         chunkConns_.erase(connId);
     }
   }
@@ -170,6 +177,7 @@ public:
   void onChunkMessage(const TcpConnectionPtr& conn, boost::shared_ptr<GateCmdProto>& gateCmd, Timestamp)
   {
       uint32_t id = gateCmd->getGateCmdMagic();
+      LOG_INFO << "chunk response, and client id: " << id;  
       TcpConnectionPtr clientConn;
       {
           MutexLockGuard lock(mutex_);
@@ -200,11 +208,33 @@ public:
   std::queue<uint32_t> availIds_;
 };
 
+int kRollSize = 500*1000*1000;
+
+boost::scoped_ptr<muduo::AsyncLogging> g_asyncLog;
+
+void asyncOutput(const char* msg, int len)
+{
+  g_asyncLog->append(msg, len);
+}
+
+void setLogging(const char* argv0)
+{
+  muduo::Logger::setOutput(asyncOutput);
+  char name[256];
+  strncpy(name, argv0, 256);
+  g_asyncLog.reset(new muduo::AsyncLogging(::basename(name), kRollSize));
+  g_asyncLog->start();
+}
+
 int main(int argc, char* argv[])
 {
+  LOG_INFO << "pid = " << getpid() << ", tid = " << CurrentThread::tid();
+  setLogging(argv[0]);
+  std::string path = "/home/yeheng/listen_unix";
   LOG_INFO << "pid = " << getpid();
   EventLoop loop;
-  InetAddress listenAddr(kListenPort);
+  unlink(path.c_str());
+  InetAddress listenAddr(path);
   GateServer server(&loop, listenAddr, kNumThreads);
 
   server.start();

@@ -65,6 +65,9 @@ public:
     void setGateCmdMagic(uint32_t magic) {
          head.magic = magic;
     }
+    void setGateCmdHead(protohead hdr) {
+         head = hdr;
+    }
     void setGateCmdSize(uint32_t size) {
         head.size = size;
     }

@@ -28,6 +28,7 @@ class GateCmdCodec : boost::noncopyable
           muduo::net::Buffer* buf,
           muduo::Timestamp receiveTime)
   {
+      LOG_INFO << "date in codec onMessage" << conn->name(); 
       GateCmdProto::protohead head;
       size_t readable = buf->readableBytes();
       LOG_INFO <<  "readable: " << readable;
@@ -38,9 +39,11 @@ class GateCmdCodec : boost::noncopyable
               buf->retrieve(head.size);
               readable -= head.size;
               boost::shared_ptr<GateCmdProto> gateCmdPtr(new GateCmdProto()); //构造一个GateCmdProto类，用智能指针管理
+              gateCmdPtr->setGateCmdHead(head);
               if (head.size > sizeof(GateCmdProto::protohead)) { // 这个命令是带数据的
                  gateCmdPtr->setGateCmdData(std::string(reinterpret_cast<const char*>(buf->peek()), head.size - sizeof(GateCmdProto::protohead)));
               }
+              LOG_INFO << head.size << "  " << head.magic << " "  << head.cmd;   
               gateCmdCallback_(conn, gateCmdPtr, receiveTime);
           } else {
               break;
