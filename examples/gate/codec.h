@@ -1,5 +1,5 @@
-#ifndef MUDUO_EXAMPLES_ASIO_CHAT_CODEC_H
-#define MUDUO_EXAMPLES_ASIO_CHAT_CODEC_H
+#ifndef MUDUO_EXAMPLES_GATE_CODEC_H
+#define MUDUO_EXAMPLES_GATE_CODEC_H
 
 #include <muduo/base/Logging.h>
 #include <muduo/net/Buffer.h>
@@ -10,17 +10,6 @@
 #include <boost/noncopyable.hpp>
 #include "proto.h"
 
-#ifndef MUDUO_EXAMPLES_ASIO_CHAT_CODEC_H
-#define MUDUO_EXAMPLES_ASIO_CHAT_CODEC_H
-
-#include <muduo/base/Logging.h>
-#include <muduo/net/Buffer.h>
-#include <muduo/net/Endian.h>
-#include <muduo/net/TcpConnection.h>
-
-#include <boost/function.hpp>
-#include <boost/noncopyable.hpp>
-#include "proto.h"
 
 class GateCmdCodec : boost::noncopyable
 {
@@ -30,8 +19,8 @@ class GateCmdCodec : boost::noncopyable
                                 muduo::Timestamp)> gateCmdCallback_t;
 
 
-  explicit GateCmdCodec(const gateCmdDispatcherCallback_t& cb)
-    : dispatcherCallback_(cb)
+  explicit GateCmdCodec(const gateCmdCallback_t& cb)
+    : gateCmdCallback_(cb)
   {
   }
 
@@ -66,4 +55,4 @@ class GateCmdCodec : boost::noncopyable
   gateCmdCallback_t gateCmdCallback_;
 };
 
-#endif  // MUDUO_EXAMPLES_ASIO_CHAT_CODEC_H
+#endif  // MUDUO_EXAMPLES_GATE_CODEC_H
