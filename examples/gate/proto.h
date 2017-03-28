@@ -69,7 +69,7 @@ public:
         head.size = size;
     }
     
-    void setGateCmdData(std::string& str) {
+    void setGateCmdData(std::string str) {
         data = str;
     }
 

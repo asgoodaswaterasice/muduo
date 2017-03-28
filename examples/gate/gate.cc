@@ -11,20 +11,22 @@
 
 #include <stdio.h>
 #include <unistd.h>
-#include <proto.h>
+#include "proto.h"
+#include "codec.h"
 
 using namespace muduo;
 using namespace muduo::net;
 
 typedef boost::shared_ptr<TcpClient> TcpClientPtr;
 
-const int kMaxConns = 40;
+const uint32_t kMaxConns = 40;
+const int kNumThreads = 40;
 
 const uint16_t kListenPort = 9999;
 
 struct Entry
 {
-  uint16_t connId;
+  uint32_t connId;
   TcpClientPtr client;
   TcpConnectionPtr connection;
   Buffer pending;
@@ -35,15 +37,15 @@ class GateServer : boost::noncopyable
 public:
     GateServer(EventLoop* loop, const InetAddress& listenAddr, int numThreads)
             : loop_(loop),
-              numThreads_(numThreads),
               server_(loop, listenAddr, "GateServer"),
+              numThreads_(numThreads),
               codec_(boost::bind(&GateServer::onServerMessage, this, _1, _2, _3)),
               codec1_(boost::bind(&GateServer::onChunkMessage, this, _1, _2, _3))
 
     {
         MutexLockGuard lock(mutex_);
         assert(availIds_.empty());
-        for (int i = 1; i <= kMaxConns; ++i)
+        for (uint32_t i = 1; i <= kMaxConns; ++i)
         {
             availIds_.push(i);
         }
@@ -100,9 +102,9 @@ public:
 
   void onServerMessage(const TcpConnectionPtr& conn,  boost::shared_ptr<GateCmdProto>& gateCmd, Timestamp)
   {
-      LOG_INFO << "Gate Command Type: " << cmd->getGateCmdType();
+      LOG_INFO << "Gate Command Type: " << gateCmd->getGateCmdType();
 
-      uint32_t chunk_port = cmd->getGateCmdMagic();
+      uint32_t chunk_port = gateCmd->getGateCmdMagic();
       assert(chunk_port >10000 && chunk_port < 60000);
       assert(!conn->getContext().empty()); //已经发消息了client的连接肯定已经建立了
       uint32_t id = boost::any_cast<uint32_t>(conn->getContext());
@@ -116,31 +118,31 @@ public:
           InetAddress chunkAddr("127.0.0.1", static_cast<uint16_t >(chunk_port));
           entry.client.reset(new TcpClient(loop_, chunkAddr, connName));
           entry.client->setConnectionCallback(
-                  boost::bind(&GateServer::onChunkConnection, this, connId, _1));
+                  boost::bind(&GateServer::onChunkConnection, this, entry.connId, _1));
 //          entry.client->setMessageCallback(
-//                  boost::bind(&GateServer::onChunkMessage, this, connId, _1, _2, _3));
+//                  boost::bind(&GateServer::onChunkMessage, this, entry.connId, _1, _2, _3));
           entry.client->setMessageCallback(
                   boost::bind(&GateCmdCodec::onMessage, &codec1_,  _1, _2, _3));
 
                   // FIXME: setWriteCompleteCallback
-          chunkConns_[connId] = entry;
+          chunkConns_[entry.connId] = entry;
+
           entry.client->connect();
       }
       else
       {
-          TcpConnectionPtr& chunkConnPtr = chunkConns_.find(chunk_port);
+          TcpConnectionPtr& chunkConnPtr = chunkConns_.find(chunk_port)->second.connection;
           if (chunkConnPtr)  //map中有这个连接并且这个连接已经建立完成
           {
               assert(chunkConns_[chunk_port].pending.readableBytes() == 0);///////////////
-              gateCmd->setGateCmdMagic(); //得到发送的connId
               chunkConnPtr->send(gateCmd->getGateCmdHeadString());
-              if (!gateCmd->getGateCmdData().empty) //如果带数据，数据也要发送出去
+              if (!gateCmd->getGateCmdData().empty()) //如果带数据，数据也要发送出去
                   chunkConnPtr->send(gateCmd->getGateCmdData());
           }
           else
           {
               chunkConns_[chunk_port].pending.append(gateCmd->getGateCmdHeadString());
-              if (!gateCmd->getGateCmdData().empty) //如果带数据，数据也要发送出去
+              if (!gateCmd->getGateCmdData().empty()) //如果带数据，数据也要发送出去
                   chunkConns_[chunk_port].pending.append(gateCmd->getGateCmdData());
           }
 
@@ -171,7 +173,7 @@ public:
       TcpConnectionPtr clientConn;
       {
           MutexLockGuard lock(mutex_);
-          std::map<int, TcpConnectionPtr>::iterator it = clientConns_.find(id);
+          std::map<uint32_t, TcpConnectionPtr>::iterator it = clientConns_.find(id);
           if (it != clientConns_.end())
           {
               clientConn = it->second;
@@ -180,38 +182,22 @@ public:
       if (clientConn)
       {
           clientConn->send(gateCmd->getGateCmdHeadString());
-          if (!gateCmd->getGateCmdData().empty) //如果带数据，数据也要发送出去
+          if (!gateCmd->getGateCmdData().empty()) //如果带数据，数据也要发送出去
               clientConn->send(gateCmd->getGateCmdData());
       }
   }
 
-  void sendServerPacket(int connId, Buffer* buf)
-  {
-    size_t len = buf->readableBytes();
-    LOG_DEBUG << len;
-    assert(len <= kMaxPacketLen);
-    uint8_t header[kHeaderLen] = {
-      static_cast<uint8_t>(len),
-      static_cast<uint8_t>(connId & 0xFF),
-      static_cast<uint8_t>((connId & 0xFF00) >> 8)
-    };
-    buf->prepend(header, kHeaderLen);
-    if (serverConn_)
-    {
-      serverConn_->send(buf);
-    }
-  }
 
-    EventLoop* loop_;
-    TcpServer server_;
-    int numThreads_;
-    GateCmdCodec codec_;
-    GateCmdCodec codec1_;
+  EventLoop* loop_;
+  TcpServer server_;
+  int numThreads_;
+  GateCmdCodec codec_;
+  GateCmdCodec codec1_;
 
-    MutexLock mutex_;
-    std::map<uint32_t, Entry> chunkConns_; //port 到 chunkConnection 的map
-    std::map<uint32_t, TcpConnectionPtr> clientConns_; //id 到 clientConnection 的map，chunk response需要查这个id
-    std::queue<uint32_t> availIds_;
+  MutexLock mutex_;
+  std::map<uint32_t, Entry> chunkConns_; //port 到 chunkConnection 的map
+  std::map<uint32_t, TcpConnectionPtr> clientConns_; //id 到 clientConnection 的map，chunk response需要查这个id
+  std::queue<uint32_t> availIds_;
 };
 
 int main(int argc, char* argv[])
@@ -219,7 +205,7 @@ int main(int argc, char* argv[])
   LOG_INFO << "pid = " << getpid();
   EventLoop loop;
   InetAddress listenAddr(kListenPort);
-  GateServer server(&loop, listenAddr, socksAddr, numThreads);
+  GateServer server(&loop, listenAddr, kNumThreads);
 
   server.start();
 
