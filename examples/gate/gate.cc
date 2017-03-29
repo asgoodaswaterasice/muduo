@@ -1,6 +1,8 @@
 #include <muduo/base/Logging.h>
 #include <muduo/base/AsyncLogging.h>
+#include <muduo/base/Thread.h>
 #include <muduo/net/EventLoop.h>
+#include <muduo/net/EventLoopThreadPool.h>
 #include <muduo/net/InetAddress.h>
 #include <muduo/net/TcpClient.h>
 #include <muduo/net/TcpServer.h>
@@ -22,6 +24,7 @@ typedef boost::shared_ptr<TcpClient> TcpClientPtr;
 
 const uint32_t kMaxConns = 40;
 const int kNumThreads = 40;
+const int kNumThreads1 = 40;
 
 const uint16_t kListenPort = 9999;
 
@@ -30,26 +33,30 @@ struct Entry
   uint32_t connId;
   TcpClientPtr client;
   TcpConnectionPtr connection;
-  Buffer pending;
+//  Buffer pending;
 };
 
 class GateServer : boost::noncopyable
 {
 public:
-    GateServer(EventLoop* loop, const InetAddress& listenAddr, int numThreads)
+    GateServer(EventLoop* loop, const InetAddress& listenAddr, int numThreads, int numThreads1, string poolName)
             : loop_(loop),
               server_(loop, listenAddr, "GateServer"),
               numThreads_(numThreads),
               codec_(boost::bind(&GateServer::onServerMessage, this, _1, _2, _3)),
-              codec1_(boost::bind(&GateServer::onChunkMessage, this, _1, _2, _3))
-
+              codec1_(boost::bind(&GateServer::onChunkMessage, this, _1, _2, _3)),
+              chunkThread(boost::bind(&GateServer::createChunkConnThreadPool, this, numThreads1, poolName))
     {
-        MutexLockGuard lock(mutex_);
-        assert(availIds_.empty());
-        for (uint32_t i = 1; i <= kMaxConns; ++i)
         {
-            availIds_.push(i);
+            MutexLockGuard lock(mutex_);
+            assert(availIds_.empty());
+            for (uint32_t i = 1; i <= kMaxConns; ++i)
+            {
+                availIds_.push(i);
+            }
         }
+        chunkThread.start();
+        server_.setThreadNum(numThreads);
         server_.setConnectionCallback( boost::bind(&GateServer::onServerConnection, this, _1));
         server_.setMessageCallback(boost::bind(&GateCmdCodec::onMessage, &codec_, _1, _2, _3));
     }
@@ -111,6 +118,7 @@ public:
       uint32_t id = boost::any_cast<uint32_t>(conn->getContext());
       gateCmd->setGateCmdMagic(id); //通过这个id找到消息回给哪个client
       LOG_INFO << "======flowno:" << gateCmd->getGateCmdFlowno();
+      mutex1_.lock();
       if(chunkConns_.find(chunk_port) == chunkConns_.end())
       {
           char connName[256];
@@ -118,7 +126,10 @@ public:
           Entry entry;
           entry.connId = chunk_port;
           InetAddress chunkAddr("127.0.0.1", static_cast<uint16_t >(chunk_port));
-          entry.client.reset(new TcpClient(loop_, chunkAddr, connName));
+          EventLoop* chunkLoop = NULL;
+          loop1_->runInLoop(boost::bind(&GateServer::getChunkConnLoop, this, &chunkLoop));
+          while(chunkLoop == NULL);
+          entry.client.reset(new TcpClient(chunkLoop, chunkAddr, connName));
           entry.client->setConnectionCallback(
                   boost::bind(&GateServer::onChunkConnection, this, entry.connId, _1));
 //          entry.client->setMessageCallback(
@@ -129,18 +140,19 @@ public:
                   // FIXME: setWriteCompleteCallback
           chunkConns_[entry.connId] = entry;
           LOG_INFO << "client to chunk not exist, try to connent, id: " << entry.connId;
-              chunkConns_[chunk_port].pending.append(gateCmd->getGateCmdHeadPtr(), sizeof(GateCmdProto::protohead));
-              if (!gateCmd->getGateCmdData().empty()) //如果带数据，数据也要发送出去
-                  chunkConns_[chunk_port].pending.append(gateCmd->getGateCmdData());
-        LOG_INFO << "pending======flowno:" << gateCmd->getGateCmdFlowno();
+     //         chunkConns_[chunk_port].pending.append(gateCmd->getGateCmdHeadPtr(), sizeof(GateCmdProto::protohead));
+     //         if (!gateCmd->getGateCmdData().empty()) //如果带数据，数据也要发送出去
+      //            chunkConns_[chunk_port].pending.append(gateCmd->getGateCmdData());
+          LOG_INFO << "pending======flowno:" << gateCmd->getGateCmdFlowno();
+      //    mutex1_.unlock();
           entry.client->connect();
       }
       else
       {
           TcpConnectionPtr& chunkConnPtr = chunkConns_.find(chunk_port)->second.connection;
+       //   mutex1_.unlock();
           if (chunkConnPtr)  //map中有这个连接并且这个连接已经建立完成
           {
-              assert(chunkConns_[chunk_port].pending.readableBytes() == 0);///////////////
               chunkConnPtr->send(gateCmd->getGateCmdHeadPtr(), sizeof(GateCmdProto::protohead));
               if (!gateCmd->getGateCmdData().empty()) //如果带数据，数据也要发送出去
                   chunkConnPtr->send(gateCmd->getGateCmdData());
@@ -148,13 +160,15 @@ public:
           }
           else
           {
-              chunkConns_[chunk_port].pending.append(gateCmd->getGateCmdHeadPtr(), sizeof(GateCmdProto::protohead));
+            //后端连接没有建立直接丢掉
+        /*      chunkConns_[chunk_port].pending.append(gateCmd->getGateCmdHeadPtr(), sizeof(GateCmdProto::protohead));
               if (!gateCmd->getGateCmdData().empty()) //如果带数据，数据也要发送出去
                   chunkConns_[chunk_port].pending.append(gateCmd->getGateCmdData());
-              LOG_INFO << "pending======flowno:" << gateCmd->getGateCmdFlowno();
+              LOG_INFO << "pending======flowno:" << gateCmd->getGateCmdFlowno(); */
           }
 
       }
+       mutex1_.unlock();
   }
 
   void onChunkConnection(int connId, const TcpConnectionPtr& conn)
@@ -164,18 +178,18 @@ public:
     {
       conn->setTcpNoDelay(true);
       chunkConns_[connId].connection = conn;
-      Buffer& pendingData = chunkConns_[connId].pending;
-      LOG_INFO << "connect to chunk success id: " << connId <<  
-          "buffer has pending data size: " << pendingData.readableBytes();
-      if (pendingData.readableBytes() > 0)
+    //  Buffer& pendingData = chunkConns_[connId].pending;
+      LOG_INFO << "connect to chunk success id: " << connId;
+     /* if (pendingData.readableBytes() > 0)
       {
         conn->send(&pendingData);
       }
+      */
     }
     else
     {
-        LOG_INFO << "disconnet from chunk, the erased id: " << connId;
-        chunkConns_.erase(connId);
+        LOG_INFO << "disconnet from chunk, do not  erased id: " << connId;
+       // chunkConns_.erase(connId);
     }
   }
 
@@ -200,21 +214,39 @@ public:
               clientConn->send(gateCmd->getGateCmdData());
       }
   }
+  void createChunkConnThreadPool(int numThread, string poolName) {
+      EventLoop loop;
+      EventLoopThreadPool chunkConnThreadPool(&loop, poolName);
+      loop1_ = &loop;
+      threadPoolPtr = &chunkConnThreadPool;
+      chunkConnThreadPool.setThreadNum(numThread);
+      chunkConnThreadPool.start();
+      loop.loop();
+  }
+  void getChunkConnLoop(EventLoop** loopPtr) {
+      LOG_INFO << "before get a loop : " << *loopPtr;
+      *loopPtr = threadPoolPtr->getNextLoop();
+      LOG_INFO << "get a loop : " << *loopPtr;
+  }
 
 
   EventLoop* loop_;
+  EventLoop* loop1_;
+  EventLoopThreadPool* threadPoolPtr;
   TcpServer server_;
   int numThreads_;
   GateCmdCodec codec_;
   GateCmdCodec codec1_;
+  Thread chunkThread;
 
   MutexLock mutex_;
+  MutexLock mutex1_;
   std::map<uint32_t, Entry> chunkConns_; //port 到 chunkConnection 的map
   std::map<uint32_t, TcpConnectionPtr> clientConns_; //id 到 clientConnection 的map，chunk response需要查这个id
   std::queue<uint32_t> availIds_;
 };
 
-int kRollSize = 500*1000*1000;
+int kRollSize = 1000*1000*1000;
 
 boost::scoped_ptr<muduo::AsyncLogging> g_asyncLog;
 
@@ -239,9 +271,10 @@ int main(int argc, char* argv[])
   std::string path = "/home/yeheng/listen_unix";
   LOG_INFO << "pid = " << getpid();
   EventLoop loop;
+
   unlink(path.c_str());
   InetAddress listenAddr(path);
-  GateServer server(&loop, listenAddr, kNumThreads);
+  GateServer server(&loop, listenAddr, kNumThreads, kNumThreads1, "chunkThreadPool");
 
   server.start();
 
