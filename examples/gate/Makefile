@@ -16,10 +16,10 @@ LDFLAGS = -L$(MUDUO_LIBRARY) -lmuduo_net -lmuduo_base -lpthread -lrt
 #OBJS = $(addsuffix .o, $(basename $(SRCS)))
 CC = g++
 
-APP=gate echo unix_client
+APP=gate1 echo unix_client
 all: $(APP)
 
-gate : gate.o
+gate1 : gate1.o
 	    $(CC)  $^ -o $@  $(LDFLAGS)
 
 echo : echo.o
